@@ -1,202 +1,262 @@
 window.startPhaserGame = function(selectedSkin) {
+  const BOARD_WIDTH = 10;
+  const BOARD_HEIGHT = 20;
+  const CELL_SIZE = 30;
+
   const skins = {
     classic: {
-      backgroundColor: '#111',
-      colors: ['#00f', '#0f0', '#f00', '#ff0', '#0ff', '#f0f', '#fff'],
-      shadow: false
+      colors: {
+        I: 0x00ffff, O: 0xffff00, T: 0xaa00ff,
+        S: 0x00ff00, Z: 0xff0000, J: 0x0000ff, L: 0xffa500
+      },
+      bg: 0x000000
     },
-    modern: {
-      backgroundColor: '#222',
-      colors: ['#4fc3f7', '#81c784', '#e57373', '#fff176', '#80deea', '#ba68c8', '#ffffff'],
-      shadow: true
+    neon: {
+      colors: {
+        I: 0x00eaff, O: 0xfff200, T: 0xff00f2,
+        S: 0x00ff91, Z: 0xff003c, J: 0x0066ff, L: 0xff8900
+      },
+      bg: 0x111111
+    },
+    pastel: {
+      colors: {
+        I: 0xa8e6cf, O: 0xfff3b0, T: 0xffd6e0,
+        S: 0xaff8db, Z: 0xffaaa5, J: 0xa0c4ff, L: 0xffd6a5
+      },
+      bg: 0xf8f9fa
     }
   };
 
   const skin = skins[selectedSkin] || skins.classic;
 
+  let score = 0;
+  let linesCleared = 0;
+  let holdPiece = null;
+  let holdUsed = false;
+  let nextQueue = [];
+  const queueSize = 5;
+
+  const shapes = {
+    I: [[1,1,1,1]],
+    O: [[1,1],[1,1]],
+    T: [[0,1,0],[1,1,1]],
+    S: [[0,1,1],[1,1,0]],
+    Z: [[1,1,0],[0,1,1]],
+    J: [[1,0,0],[1,1,1]],
+    L: [[0,0,1],[1,1,1]]
+  };
+
+  let game;
+
   const config = {
     type: Phaser.AUTO,
-    width: 320,
-    height: 640,
-    parent: 'game-container',
-    backgroundColor: skin.backgroundColor,
+    width: BOARD_WIDTH * CELL_SIZE + 200,
+    height: BOARD_HEIGHT * CELL_SIZE,
+    backgroundColor: skin.bg,
+    parent: 'phaser-game',
     scene: {
-      preload,
-      create,
-      update
+      preload: preload,
+      create: create,
+      update: update
     }
   };
 
-  const game = new Phaser.Game(config);
-
-  let board = [];
-  const ROWS = 20, COLS = 10, BLOCK_SIZE = 32;
-  let currentPiece, nextPieces = [], holdPiece = null, canHold = true;
-  let score = 0, lines = 0;
-  let cursors, dropTime = 0, dropInterval = 500;
+  game = new Phaser.Game(config);
 
   function preload() {}
 
   function create() {
-    this.cameras.main.setBackgroundColor(skin.backgroundColor);
-    cursors = this.input.keyboard.createCursorKeys();
-    this.input.keyboard.on('keydown-H', holdPieceHandler);
-
-    initBoard();
-    for (let i = 0; i < 5; i++) nextPieces.push(randomPiece());
-    spawnPiece();
-
-    this.scoreText = this.add.text(320, 10, 'SCORE: 0\nLINES: 0', { fontSize: '20px', fill: '#fff' });
-
-    // 背景装飾（モダンなら軽いエフェクト）
-    if (skin.shadow) {
-      this.add.text(40, 600, 'MODERN MODE', { fontSize: '18px', fill: '#888' });
-    }
+    this.board = Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(null));
+    this.graphics = this.add.graphics();
+    this.currentPiece = createPiece();
+    for (let i = 0; i < queueSize; i++) nextQueue.push(randomPiece());
+    this.nextText = this.add.text(BOARD_WIDTH * CELL_SIZE + 10, 10, 'NEXT:', { fontSize: '20px', color: '#fff' });
+    this.input.keyboard.on('keydown', handleInput, this);
+    this.dropTime = 1000;
+    this.lastDrop = 0;
+    this.gameOver = false;
   }
 
   function update(time) {
-    if (time > dropTime + dropInterval) {
-      dropPiece();
-      dropTime = time;
+    if (this.gameOver) return;
+    if (time > this.lastDrop + this.dropTime) {
+      moveDown.call(this);
+      this.lastDrop = time;
     }
-    if (Phaser.Input.Keyboard.JustDown(cursors.space)) {
-      hardDrop();
-    }
-    if (Phaser.Input.Keyboard.JustDown(cursors.left)) {
-      movePiece(-1);
-    }
-    if (Phaser.Input.Keyboard.JustDown(cursors.right)) {
-      movePiece(1);
-    }
-    if (Phaser.Input.Keyboard.JustDown(cursors.down)) {
-      dropPiece();
+    drawBoard.call(this);
+    drawPiece.call(this, this.currentPiece);
+    drawNextQueue.call(this);
+  }
+
+  function handleInput(event) {
+    if (this.gameOver) return;
+    switch (event.code) {
+      case 'ArrowLeft': moveHorizontal.call(this, -1); break;
+      case 'ArrowRight': moveHorizontal.call(this, 1); break;
+      case 'ArrowDown': moveDown.call(this); break;
+      case 'ArrowUp': rotatePiece.call(this); break;
+      case 'Space': hardDrop.call(this); break;
+      case 'ShiftLeft': hold.call(this); break;
     }
   }
 
-  function initBoard() {
-    for (let r = 0; r < ROWS; r++) {
-      board[r] = new Array(COLS).fill(null);
-    }
+  function createPiece() {
+    const type = nextQueue.shift() || randomPiece();
+    nextQueue.push(randomPiece());
+    const matrix = shapes[type];
+    return { type, matrix, x: 3, y: 0 };
   }
 
   function randomPiece() {
-    const shapes = [
-      [[1,1,1,1]], [[1,1],[1,1]], [[0,1,0],[1,1,1]], [[1,0,0],[1,1,1]], [[0,0,1],[1,1,1]], [[1,1,0],[0,1,1]], [[0,1,1],[1,1,0]]
-    ];
-    const index = Math.floor(Math.random() * shapes.length);
-    return { shape: shapes[index], color: skin.colors[index] };
+    return Object.keys(shapes)[Math.floor(Math.random() * 7)];
   }
 
-  function spawnPiece() {
-    currentPiece = nextPieces.shift();
-    currentPiece.x = 3;
-    currentPiece.y = 0;
-    nextPieces.push(randomPiece());
-    canHold = true;
+  function moveHorizontal(dir) {
+    this.currentPiece.x += dir;
+    if (collides.call(this)) this.currentPiece.x -= dir;
   }
 
-  function drawPiece(piece, ctx, offsetX = 0, offsetY = 0) {
-    piece.shape.forEach((row, r) => {
-      row.forEach((val, c) => {
-        if (val) {
-          const x = (piece.x + c + offsetX) * BLOCK_SIZE;
-          const y = (piece.y + r + offsetY) * BLOCK_SIZE;
-          ctx.fillStyle = piece.color;
-          ctx.fillRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
-          if (skin.shadow) {
-            ctx.strokeStyle = '#333';
-            ctx.strokeRect(x, y, BLOCK_SIZE, BLOCK_SIZE);
-          }
-        }
-      });
-    });
-  }
-
-  function movePiece(dir) {
-    currentPiece.x += dir;
-    if (collide()) {
-      currentPiece.x -= dir;
-    }
-  }
-
-  function dropPiece() {
-    currentPiece.y++;
-    if (collide()) {
-      currentPiece.y--;
-      lockPiece();
-      clearLines();
-      spawnPiece();
-      if (collide()) {
-        gameOver();
-      }
+  function moveDown() {
+    this.currentPiece.y++;
+    if (collides.call(this)) {
+      this.currentPiece.y--;
+      mergePiece.call(this);
+      clearLines.call(this);
+      spawnPiece.call(this);
     }
   }
 
   function hardDrop() {
-    while (!collide()) {
-      currentPiece.y++;
+    while (!collides.call(this)) {
+      this.currentPiece.y++;
     }
-    currentPiece.y--;
-    lockPiece();
-    clearLines();
-    spawnPiece();
-    if (collide()) gameOver();
+    this.currentPiece.y--;
+    mergePiece.call(this);
+    addParticles.call(this);
+    clearLines.call(this);
+    spawnPiece.call(this);
   }
 
-  function holdPieceHandler() {
-    if (!canHold) return;
+  function rotatePiece() {
+    const piece = this.currentPiece;
+    const rotated = piece.matrix[0].map((_, i) => piece.matrix.map(row => row[i])).reverse();
+    const oldMatrix = piece.matrix;
+    piece.matrix = rotated;
+    if (collides.call(this)) piece.matrix = oldMatrix;
+  }
+
+  function hold() {
+    if (holdUsed) return;
     if (!holdPiece) {
-      holdPiece = currentPiece;
-      spawnPiece();
+      holdPiece = this.currentPiece.type;
+      this.currentPiece = createPiece();
     } else {
-      [holdPiece, currentPiece] = [currentPiece, holdPiece];
-      currentPiece.x = 3;
-      currentPiece.y = 0;
+      const temp = holdPiece;
+      holdPiece = this.currentPiece.type;
+      this.currentPiece = { type: temp, matrix: shapes[temp], x: 3, y: 0 };
     }
-    canHold = false;
+    holdUsed = true;
+    document.getElementById('hold').innerHTML = 'HOLD: ' + holdPiece;
   }
 
-  function collide() {
-    return currentPiece.shape.some((row, r) => {
-      return row.some((val, c) => {
-        if (val) {
-          let y = currentPiece.y + r;
-          let x = currentPiece.x + c;
-          return y >= ROWS || x < 0 || x >= COLS || board[y][x];
-        }
-        return false;
-      });
-    });
+  function collides() {
+    const { x, y, matrix } = this.currentPiece;
+    for (let r = 0; r < matrix.length; r++) {
+      for (let c = 0; c < matrix[r].length; c++) {
+        if (matrix[r][c] && (
+          x + c < 0 || x + c >= BOARD_WIDTH || y + r >= BOARD_HEIGHT || this.board[y + r]?.[x + c]
+        )) return true;
+      }
+    }
+    return false;
   }
 
-  function lockPiece() {
-    currentPiece.shape.forEach((row, r) => {
+  function mergePiece() {
+    const { x, y, matrix, type } = this.currentPiece;
+    matrix.forEach((row, r) => {
       row.forEach((val, c) => {
-        if (val) {
-          board[currentPiece.y + r][currentPiece.x + c] = currentPiece.color;
-        }
+        if (val) this.board[y + r][x + c] = type;
       });
     });
+    holdUsed = false;
   }
 
   function clearLines() {
     let cleared = 0;
-    for (let r = ROWS - 1; r >= 0; r--) {
-      if (board[r].every(cell => cell)) {
-        board.splice(r, 1);
-        board.unshift(new Array(COLS).fill(null));
+    for (let r = BOARD_HEIGHT - 1; r >= 0; r--) {
+      if (this.board[r].every(cell => cell)) {
+        this.board.splice(r, 1);
+        this.board.unshift(Array(BOARD_WIDTH).fill(null));
         cleared++;
+        r++;
       }
     }
     if (cleared > 0) {
+      linesCleared += cleared;
       score += cleared * 100;
-      lines += cleared;
-      game.scene.scenes[0].scoreText.setText(`SCORE: ${score}\nLINES: ${lines}`);
+      document.getElementById('score').textContent = score;
+      document.getElementById('lines').textContent = linesCleared;
     }
   }
 
-  function gameOver() {
-    game.scene.scenes[0].add.text(40, 300, 'GAME OVER', { fontSize: '32px', fill: '#ff3333' });
-    game.scene.pause();
+  function spawnPiece() {
+    this.currentPiece = createPiece();
+    if (collides.call(this)) {
+      this.gameOver = true;
+      alert('GAME OVER');
+      this.scene.pause();
+    }
+  }
+
+  function drawBoard() {
+    this.graphics.clear();
+    for (let r = 0; r < BOARD_HEIGHT; r++) {
+      for (let c = 0; c < BOARD_WIDTH; c++) {
+        if (this.board[r][c]) {
+          this.graphics.fillStyle(skin.colors[this.board[r][c]], 1);
+          this.graphics.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1);
+        }
+      }
+    }
+  }
+
+  function drawPiece(piece) {
+    piece.matrix.forEach((row, r) => {
+      row.forEach((val, c) => {
+        if (val) {
+          this.graphics.fillStyle(skin.colors[piece.type], 1);
+          this.graphics.fillRect((piece.x + c) * CELL_SIZE, (piece.y + r) * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1);
+        }
+      });
+    });
+  }
+
+  function drawNextQueue() {
+    let yOffset = 40;
+    for (let i = 0; i < nextQueue.length; i++) {
+      const type = nextQueue[i];
+      const matrix = shapes[type];
+      let xBase = BOARD_WIDTH * CELL_SIZE + 20;
+      matrix.forEach((row, r) => {
+        row.forEach((val, c) => {
+          if (val) {
+            this.graphics.fillStyle(skin.colors[type], 1);
+            this.graphics.fillRect(xBase + c * 15, yOffset + r * 15, 14, 14);
+          }
+        });
+      });
+      yOffset += matrix.length * 15 + 10;
+    }
+  }
+
+  function addParticles() {
+    const emitter = this.add.particles(0, 0, 'spark', {
+      x: (this.currentPiece.x + 1) * CELL_SIZE,
+      y: (this.currentPiece.y + 1) * CELL_SIZE,
+      speed: 100,
+      lifespan: 500,
+      quantity: 10
+    });
+    setTimeout(() => emitter.stop(), 200);
   }
 };
