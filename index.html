@@ -6,30 +6,41 @@
   <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
   <script src="./game.js"></script>
   <style>
-    body { margin: 0; background: #080808; }
+    body { margin: 0; background: #080808; font-family: sans-serif; }
     canvas { display: block; margin: 0 auto; }
     #title { color: #008dbc; text-align: center; font-size: 8em; margin-top: 40px; }
-    #start-btn { display: block; margin: 120px auto; font-size: 3em; padding: 10px 40px; }
+    #start-btn { display: block; margin: 40px auto; font-size: 3em; padding: 10px 40px; }
+    #skin-select { text-align: center; color: #fff; font-size: 1.5em; margin-top: 20px; }
+    #game-container { display: none; }
+    .option { margin: 0 15px; }
   </style>
 </head>
 <body>
   <div id="title">テトリス</div>
-  <div id="mode-select">
-    <button class="mode-btn" id="tetris-btn">テトリス</button>
-  </div>
-  <button id="start-btn">スタート</button>
-  <!-- ゲーム開始前はcanvas非表示 -->
-  <div id="game-container" style="display:none;"></div>
-  <script>
 
-    // 初期選択色
+  <div id="skin-select">
+    スキン選択：
+    <label class="option"><input type="radio" name="skin" value="classic" checked> クラシック</label>
+    <label class="option"><input type="radio" name="skin" value="modern"> モダン</label>
+  </div>
+
+  <button id="start-btn">スタート</button>
+  <div id="game-container"></div>
+
+  <script>
+    let selectedSkin = 'classic';
+    document.querySelectorAll('input[name="skin"]').forEach(radio => {
+      radio.addEventListener('change', e => {
+        selectedSkin = e.target.value;
+      });
+    });
 
     document.getElementById('start-btn').onclick = function() {
       document.getElementById('title').style.display = 'none';
       document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('skin-select').style.display = 'none';
       document.getElementById('game-container').style.display = 'block';
-      // Phaserのcanvasをgame-containerに追加
-      window.startPhaserGame && window.startPhaserGame(window.selectedMode);
+      window.startPhaserGame && window.startPhaserGame(selectedSkin);
     };
   </script>
 </body>
