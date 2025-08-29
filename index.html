@@ -1,56 +1,247 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>テトリス</title>
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
-  <script src="./game.js"></script>
-  <style>
-    body { margin: 0; background: #080808; font-family: Arial, sans-serif; }
-    canvas { display: block; margin: 0 auto; }
-    #title { color: #00bcd4; text-align: center; font-size: 5em; margin-top: 40px; }
-    #menu { text-align: center; margin-top: 50px; color: white; }
-    select, button {
-      font-size: 2em; padding: 10px 30px; margin: 20px;
-      border-radius: 10px; border: none; cursor: pointer;
-    }
-    button:hover { background: #00bcd4; color: black; }
-    #game-container { display: none; text-align: center; }
-    #ui {
-      display: flex; justify-content: space-around; color: white;
-      font-size: 1.5em; margin: 10px auto; width: 600px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>テトリス</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+<style>
+  body { margin: 0; background: #080808; color: white; font-family: sans-serif; }
+  canvas { display: block; margin: 0 auto; }
+  #title { color: #00c8ff; text-align: center; font-size: 6em; margin-top: 40px; }
+  #start-btn { display: block; margin: 50px auto; font-size: 2em; padding: 10px 40px; }
+  #skin-select { display:block; margin: 20px auto; font-size:1.5em; }
+  #game-container { display:none; text-align: center; }
+</style>
 </head>
 <body>
   <div id="title">テトリス</div>
-  <div id="menu">
-    <label>スキン選択：
-      <select id="skin-select">
-        <option value="classic">クラシック</option>
-        <option value="neon">ネオン</option>
-        <option value="pastel">パステル</option>
-      </select>
-    </label>
-    <br>
-    <button id="start-btn">スタート</button>
-  </div>
-  <div id="game-container">
-    <div id="ui">
-      <div>スコア: <span id="score">0</span></div>
-      <div>ライン: <span id="lines">0</span></div>
-      <div id="hold">HOLD:</div>
-    </div>
-    <div id="phaser-game"></div>
-  </div>
-  <script>
-    document.getElementById('start-btn').onclick = function() {
-      const skin = document.getElementById('skin-select').value;
-      document.getElementById('title').style.display = 'none';
-      document.getElementById('menu').style.display = 'none';
-      document.getElementById('game-container').style.display = 'block';
-      window.startPhaserGame && window.startPhaserGame(skin);
+  <select id="skin-select">
+    <option value="default">デフォルト</option>
+    <option value="colorful">カラフル</option>
+  </select>
+  <button id="start-btn">スタート</button>
+  <div id="game-container"></div>
+
+<script>
+let selectedSkin = "default";
+
+document.getElementById('skin-select').onchange = function() {
+  selectedSkin = this.value;
+};
+
+document.getElementById('start-btn').onclick = function() {
+  document.getElementById('title').style.display = 'none';
+  document.getElementById('start-btn').style.display = 'none';
+  document.getElementById('skin-select').style.display = 'none';
+  document.getElementById('game-container').style.display = 'block';
+  startPhaserGame(selectedSkin);
+};
+
+function startPhaserGame(skin) {
+  const config = {
+    type: Phaser.AUTO,
+    width: 400,
+    height: 600,
+    backgroundColor: '#000000',
+    parent: 'game-container',
+    scene: [MainScene]
+  };
+  const game = new Phaser.Game(config);
+}
+
+class MainScene extends Phaser.Scene {
+  constructor() {
+    super('MainScene');
+    this.board = [];
+    this.currentPiece = null;
+    this.nextPieces = [];
+    this.holdPiece = null;
+    this.canHold = true;
+    this.score = 0;
+    this.lines = 0;
+  }
+
+  preload() {}
+
+  create() {
+    this.cellSize = 30;
+    this.cols = 10;
+    this.rows = 20;
+    this.offsetX = 50;
+    this.offsetY = 50;
+
+    this.add.text(300, 20, 'NEXT', {fontSize: '16px', fill:'#fff'});
+    this.add.text(300, 150, 'HOLD', {fontSize: '16px', fill:'#fff'});
+    this.scoreText = this.add.text(300, 280, 'SCORE: 0', {fontSize:'16px', fill:'#fff'});
+    this.linesText = this.add.text(300, 300, 'LINES: 0', {fontSize:'16px', fill:'#fff'});
+
+    for(let y=0; y<this.rows; y++){
+      this.board[y] = Array(this.cols).fill(null);
+    }
+
+    this.shapes = {
+      I: [[1,1,1,1]],
+      O: [[1,1],[1,1]],
+      T: [[1,1,1],[0,1,0]],
+      S: [[0,1,1],[1,1,0]],
+      Z: [[1,1,0],[0,1,1]],
+      J: [[1,0,0],[1,1,1]],
+      L: [[0,0,1],[1,1,1]]
     };
-  </script>
+
+    for(let i=0;i<3;i++) this.nextPieces.push(this.randomPiece());
+    this.spawnPiece();
+
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keySpace = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.keyShift = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+
+    this.time.addEvent({delay:500, callback:this.dropPiece, callbackScope:this, loop:true});
+  }
+
+  randomPiece(){
+    const keys = Object.keys(this.shapes);
+    const type = keys[Math.floor(Math.random()*keys.length)];
+    return {type:type, shape:this.shapes[type], x:3, y:0};
+  }
+
+  spawnPiece(){
+    this.currentPiece = this.nextPieces.shift();
+    this.nextPieces.push(this.randomPiece());
+    this.canHold = true;
+    if(this.checkCollision(this.currentPiece.x,this.currentPiece.y,this.currentPiece.shape)){
+      this.scene.pause();
+      this.add.text(100,300,'GAME OVER',{fontSize:'32px',fill:'#f00'});
+    }
+  }
+
+  holdCurrentPiece(){
+    if(!this.canHold)return;
+    if(this.holdPiece){
+      [this.holdPiece,this.currentPiece] = [this.currentPiece,this.holdPiece];
+      this.currentPiece.x=3;this.currentPiece.y=0;
+    }else{
+      this.holdPiece=this.currentPiece;
+      this.spawnPiece();
+    }
+    this.canHold=false;
+  }
+
+  dropPiece(){
+    if(!this.currentPiece)return;
+    if(!this.checkCollision(this.currentPiece.x,this.currentPiece.y+1,this.currentPiece.shape)){
+      this.currentPiece.y++;
+    }else{
+      this.mergePiece();
+      this.clearLines();
+      this.spawnPiece();
+    }
+  }
+
+  mergePiece(){
+    for(let r=0;r<this.currentPiece.shape.length;r++){
+      for(let c=0;c<this.currentPiece.shape[r].length;c++){
+        if(this.currentPiece.shape[r][c]){
+          this.board[this.currentPiece.y+r][this.currentPiece.x+c]=this.currentPiece.type;
+        }
+      }
+    }
+  }
+
+  clearLines(){
+    let cleared=0;
+    for(let y=this.rows-1;y>=0;y--){
+      if(this.board[y].every(cell=>cell)){
+        this.board.splice(y,1);
+        this.board.unshift(Array(this.cols).fill(null));
+        cleared++;
+      }
+    }
+    if(cleared>0){
+      this.score+=cleared*100;
+      this.lines+=cleared;
+      this.scoreText.setText('SCORE: '+this.score);
+      this.linesText.setText('LINES: '+this.lines);
+    }
+  }
+
+  checkCollision(x,y,shape){
+    for(let r=0;r<shape.length;r++){
+      for(let c=0;c<shape[r].length;c++){
+        if(shape[r][c]){
+          let nx=x+c,ny=y+r;
+          if(nx<0||nx>=this.cols||ny>=this.rows||this.board[ny]?.[nx]){
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  rotatePiece(){
+    const s=this.currentPiece.shape;
+    const rotated=s[0].map((_,i)=>s.map(row=>row[i])).reverse();
+    if(!this.checkCollision(this.currentPiece.x,this.currentPiece.y,rotated)){
+      this.currentPiece.shape=rotated;
+    }
+  }
+
+  hardDrop(){
+    while(!this.checkCollision(this.currentPiece.x,this.currentPiece.y+1,this.currentPiece.shape)){
+      this.currentPiece.y++;
+    }
+    this.mergePiece();
+    this.clearLines();
+    this.spawnPiece();
+  }
+
+  update(){
+    if(this.cursors.left.isDown){
+      if(!this.checkCollision(this.currentPiece.x-1,this.currentPiece.y,this.currentPiece.shape)){
+        this.currentPiece.x--;
+      }
+    }else if(this.cursors.right.isDown){
+      if(!this.checkCollision(this.currentPiece.x+1,this.currentPiece.y,this.currentPiece.shape)){
+        this.currentPiece.x++;
+      }
+    }
+    if(this.cursors.down.isDown){this.dropPiece();}
+    if(Phaser.Input.Keyboard.JustDown(this.cursors.up)){this.rotatePiece();}
+    if(Phaser.Input.Keyboard.JustDown(this.keySpace)){this.hardDrop();}
+    if(Phaser.Input.Keyboard.JustDown(this.keyShift)){this.holdCurrentPiece();}
+    this.renderBoard();
+  }
+
+  renderBoard(){
+    this.children.removeAll(); // 簡易クリア
+    this.add.text(300, 20, 'NEXT', {fontSize: '16px', fill:'#fff'});
+    this.add.text(300, 150, 'HOLD', {fontSize: '16px', fill:'#fff'});
+    this.add.text(300, 280, 'SCORE: '+this.score, {fontSize:'16px', fill:'#fff'});
+    this.add.text(300, 300, 'LINES: '+this.lines, {fontSize:'16px', fill:'#fff'});
+
+    const colors = {
+      default: '#00ffff',
+      colorful: ['#f00','#0f0','#00f','#ff0','#f0f','#0ff','#fff']
+    };
+    for(let y=0;y<this.rows;y++){
+      for(let x=0;x<this.cols;x++){
+        if(this.board[y][x]){
+          const color = (selectedSkin==='colorful') ? colors.colorful[Math.floor(Math.random()*7)] : colors.default;
+          this.add.rectangle(this.offsetX+x*this.cellSize,this.offsetY+y*this.cellSize,this.cellSize,this.cellSize,color).setOrigin(0);
+        }
+      }
+    }
+    for(let r=0;r<this.currentPiece.shape.length;r++){
+      for(let c=0;c<this.currentPiece.shape[r].length;c++){
+        if(this.currentPiece.shape[r][c]){
+          const color = (selectedSkin==='colorful') ? '#fff' : '#00ffff';
+          this.add.rectangle(this.offsetX+(this.currentPiece.x+c)*this.cellSize,this.offsetY+(this.currentPiece.y+r)*this.cellSize,this.cellSize,this.cellSize,color).setOrigin(0);
+        }
+      }
+    }
+  }
+}
+</script>
 </body>
 </html>
