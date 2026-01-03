@@ -203,9 +203,56 @@ window.startPhaserGame = function(selectedSkin) {
     this.currentPiece = createPiece();
     if (collides.call(this)) {
       this.gameOver = true;
-      alert('GAME OVER');
-      this.scene.pause();
+      triggerGameOverAnimation.call(this);
     }
+  }
+
+  function triggerGameOverAnimation() {
+    // ゲーム画面を落下させるアニメーション
+    const canvas = this.sys.game.canvas;
+    const container = canvas.parentElement;
+    
+    // ゲームオーバーテキストを表示
+    const gameOverText = this.add.text(
+      BOARD_WIDTH * CELL_SIZE / 2, 
+      BOARD_HEIGHT * CELL_SIZE / 2,
+      'GAME OVER',
+      { 
+        fontSize: '48px', 
+        color: '#ff0000',
+        fontStyle: 'bold',
+        stroke: '#ffffff',
+        strokeThickness: 4
+      }
+    ).setOrigin(0.5);
+    
+    // テキストを点滅させる
+    this.tweens.add({
+      targets: gameOverText,
+      alpha: 0,
+      duration: 300,
+      yoyo: true,
+      repeat: 3
+    });
+    
+    // カメラを振動させる
+    this.cameras.main.shake(500, 0.01);
+    
+    // 画面全体を落下させる
+    this.tweens.add({
+      targets: this.cameras.main,
+      scrollY: BOARD_HEIGHT * CELL_SIZE * 2,
+      duration: 1500,
+      ease: 'Cubic.easeIn',
+      onComplete: () => {
+        this.scene.pause();
+        setTimeout(() => {
+          if (confirm('ゲームオーバー！もう一度プレイしますか？')) {
+            location.reload();
+          }
+        }, 100);
+      }
+    });
   }
 
   function drawBoard() {
