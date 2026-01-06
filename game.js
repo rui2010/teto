@@ -50,8 +50,8 @@ window.startPhaserGame = function(selectedSkin) {
 
   const config = {
     type: Phaser.AUTO,
-    width: BOARD_WIDTH * CELL_SIZE + 200,
-    height: BOARD_HEIGHT * CELL_SIZE,
+    width: BOARD_WIDTH * CELL_SIZE + 280,
+    height: BOARD_HEIGHT * CELL_SIZE + 100,
     backgroundColor: skin.bg,
     parent: 'phaser-game',
     scene: {
@@ -67,14 +67,40 @@ window.startPhaserGame = function(selectedSkin) {
 
   function create() {
     this.board = Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(null));
+    
+    // グリッド背景
+    this.gridGraphics = this.add.graphics();
+    drawGridBackground.call(this);
+    
     this.graphics = this.add.graphics();
+    
+    // 背景パネル描画
+    const panelGraphics = this.add.graphics();
+    panelGraphics.fillStyle(skin.bg === 0x000000 ? 0x1a1a1a : 0xeeeeee, 0.8);
+    panelGraphics.fillRoundedRect(BOARD_WIDTH * CELL_SIZE + 5, 5, 270, BOARD_HEIGHT * CELL_SIZE - 10, 10);
+    
     this.currentPiece = createPiece();
     for (let i = 0; i < queueSize; i++) nextQueue.push(randomPiece());
-    this.nextText = this.add.text(BOARD_WIDTH * CELL_SIZE + 10, 10, 'NEXT:', { fontSize: '20px', color: '#fff' });
+    
+    // ネクスト表示
+    this.nextTitle = this.add.text(BOARD_WIDTH * CELL_SIZE + 20, 15, 'NEXT', { 
+      fontSize: '18px', 
+      fontStyle: 'bold',
+      color: skin.bg === 0x000000 ? '#00bcd4' : '#0066cc'
+    });
+    
+    // ホールド表示
+    this.holdTitle = this.add.text(BOARD_WIDTH * CELL_SIZE + 20, BOARD_HEIGHT * CELL_SIZE - 100, 'HOLD', {
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: skin.bg === 0x000000 ? '#ff6600' : '#cc3300'
+    });
+    
     this.input.keyboard.on('keydown', handleInput, this);
     this.dropTime = 1000;
     this.lastDrop = 0;
     this.gameOver = false;
+    this.ghostPieceColor = skin.bg === 0x000000 ? 0x444444 : 0xcccccc;
   }
 
   function update(time) {
@@ -84,8 +110,10 @@ window.startPhaserGame = function(selectedSkin) {
       this.lastDrop = time;
     }
     drawBoard.call(this);
+    drawGhostPiece.call(this);
     drawPiece.call(this, this.currentPiece);
     drawNextQueue.call(this);
+    drawHoldPiece.call(this);
   }
 
   function handleInput(event) {
@@ -156,7 +184,7 @@ window.startPhaserGame = function(selectedSkin) {
       this.currentPiece = { type: temp, matrix: shapes[temp], x: 3, y: 0 };
     }
     holdUsed = true;
-    document.getElementById('hold').innerHTML = 'HOLD: ' + holdPiece;
+    document.getElementById('hold-text').textContent = holdPiece;
   }
 
   function collides() {
@@ -257,43 +285,157 @@ window.startPhaserGame = function(selectedSkin) {
 
   function drawBoard() {
     this.graphics.clear();
+    
+    // グリッド線を描画
+    this.graphics.lineStyle(1, skin.bg === 0x000000 ? 0x333333 : 0xdddddd, 0.5);
+    for (let r = 0; r <= BOARD_HEIGHT; r++) {
+      this.graphics.lineBetween(0, r * CELL_SIZE, BOARD_WIDTH * CELL_SIZE, r * CELL_SIZE);
+    }
+    for (let c = 0; c <= BOARD_WIDTH; c++) {
+      this.graphics.lineBetween(c * CELL_SIZE, 0, c * CELL_SIZE, BOARD_HEIGHT * CELL_SIZE);
+    }
+    
+    // ブロックを描画
     for (let r = 0; r < BOARD_HEIGHT; r++) {
       for (let c = 0; c < BOARD_WIDTH; c++) {
         if (this.board[r][c]) {
-          this.graphics.fillStyle(skin.colors[this.board[r][c]], 1);
+          const color = skin.colors[this.board[r][c]];
+          this.graphics.fillStyle(color, 1);
           this.graphics.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1);
+          
+          // 3Dっぽいハイライト
+          this.graphics.fillStyle(0xffffff, 0.3);
+          this.graphics.fillRect(c * CELL_SIZE + 1, r * CELL_SIZE + 1, CELL_SIZE - 4, 3);
+          
+          // 暗い影
+          this.graphics.fillStyle(0x000000, 0.2);
+          this.graphics.fillRect(c * CELL_SIZE + 1, r * CELL_SIZE + CELL_SIZE - 4, CELL_SIZE - 4, 3);
         }
       }
     }
+  }
+
+  function drawGridBackground() {
+    this.gridGraphics.clear();
+    this.gridGraphics.lineStyle(2, skin.bg === 0x000000 ? 0x00bcd4 : 0x0066cc, 0.3);
+    
+    // ボード外枠
+    this.gridGraphics.strokeRect(0, 0, BOARD_WIDTH * CELL_SIZE, BOARD_HEIGHT * CELL_SIZE);
   }
 
   function drawPiece(piece) {
     piece.matrix.forEach((row, r) => {
       row.forEach((val, c) => {
         if (val) {
-          this.graphics.fillStyle(skin.colors[piece.type], 1);
+          const color = skin.colors[piece.type];
+          this.graphics.fillStyle(color, 1);
           this.graphics.fillRect((piece.x + c) * CELL_SIZE, (piece.y + r) * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1);
+          
+          // 3Dっぽいハイライト
+          this.graphics.fillStyle(0xffffff, 0.4);
+          this.graphics.fillRect((piece.x + c) * CELL_SIZE + 1, (piece.y + r) * CELL_SIZE + 1, CELL_SIZE - 4, 3);
+          
+          // 暗い影
+          this.graphics.fillStyle(0x000000, 0.3);
+          this.graphics.fillRect((piece.x + c) * CELL_SIZE + 1, (piece.y + r) * CELL_SIZE + CELL_SIZE - 4, CELL_SIZE - 4, 3);
+        }
+      });
+    });
+  }
+
+  function drawGhostPiece() {
+    const piece = this.currentPiece;
+    let ghostPiece = { ...piece };
+    while (!collides.call(Object.assign(this, { currentPiece: ghostPiece }))) {
+      ghostPiece.y++;
+    }
+    ghostPiece.y--;
+    
+    piece.matrix.forEach((row, r) => {
+      row.forEach((val, c) => {
+        if (val) {
+          this.graphics.fillStyle(this.ghostPieceColor, 0.3);
+          this.graphics.fillRect((ghostPiece.x + c) * CELL_SIZE, (ghostPiece.y + r) * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1);
+          
+          // ゴーストピースの枠線
+          this.graphics.lineStyle(2, this.ghostPieceColor, 0.5);
+          this.graphics.strokeRect((ghostPiece.x + c) * CELL_SIZE, (ghostPiece.y + r) * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1);
         }
       });
     });
   }
 
   function drawNextQueue() {
-    let yOffset = 40;
+    let yOffset = 50;
+    const startX = BOARD_WIDTH * CELL_SIZE + 20;
+    
     for (let i = 0; i < nextQueue.length; i++) {
       const type = nextQueue[i];
       const matrix = shapes[type];
-      let xBase = BOARD_WIDTH * CELL_SIZE + 20;
+      const color = skin.colors[type];
+      
+      // 背景パネル
+      const panelHeight = matrix.length * 15 + 10;
+      this.graphics.fillStyle(skin.bg === 0x000000 ? 0x222222 : 0xf0f0f0, 0.5);
+      this.graphics.fillRoundedRect(startX - 5, yOffset - 5, 85, panelHeight + 10, 3);
+      
+      // ネクストピース表示
       matrix.forEach((row, r) => {
         row.forEach((val, c) => {
           if (val) {
-            this.graphics.fillStyle(skin.colors[type], 1);
-            this.graphics.fillRect(xBase + c * 15, yOffset + r * 15, 14, 14);
+            this.graphics.fillStyle(color, 1);
+            this.graphics.fillRect(startX + c * 15 + 5, yOffset + r * 15, 14, 14);
+            
+            // ハイライト
+            this.graphics.fillStyle(0xffffff, 0.3);
+            this.graphics.fillRect(startX + c * 15 + 6, yOffset + r * 15 + 1, 5, 2);
           }
         });
       });
-      yOffset += matrix.length * 15 + 10;
+      
+      yOffset += panelHeight + 5;
     }
+  }
+
+  function drawHoldPiece() {
+    if (!holdPiece) {
+      const startX = BOARD_WIDTH * CELL_SIZE + 20;
+      const startY = BOARD_HEIGHT * CELL_SIZE - 85;
+      
+      this.graphics.fillStyle(skin.bg === 0x000000 ? 0x222222 : 0xf0f0f0, 0.5);
+      this.graphics.fillRoundedRect(startX - 5, startY - 5, 85, 80, 3);
+      
+      const textColor = skin.bg === 0x000000 ? 0xcccccc : 0x666666;
+      this.graphics.fillStyle(textColor, 0.3);
+      
+      // 枠線
+      this.graphics.lineStyle(1, textColor, 0.5);
+      this.graphics.strokeRoundedRect(startX - 5, startY - 5, 85, 80, 3);
+      return;
+    }
+    
+    const matrix = shapes[holdPiece];
+    const color = skin.colors[holdPiece];
+    const startX = BOARD_WIDTH * CELL_SIZE + 20;
+    const startY = BOARD_HEIGHT * CELL_SIZE - 85;
+    
+    // 背景パネル
+    this.graphics.fillStyle(skin.bg === 0x000000 ? 0x222222 : 0xf0f0f0, 0.5);
+    this.graphics.fillRoundedRect(startX - 5, startY - 5, 85, 80, 3);
+    
+    // ホールドピース表示
+    matrix.forEach((row, r) => {
+      row.forEach((val, c) => {
+        if (val) {
+          this.graphics.fillStyle(color, 1);
+          this.graphics.fillRect(startX + c * 15 + 5, startY + r * 15 + 10, 14, 14);
+          
+          // ハイライト
+          this.graphics.fillStyle(0xffffff, 0.3);
+          this.graphics.fillRect(startX + c * 15 + 6, startY + r * 15 + 11, 5, 2);
+        }
+      });
+    });
   }
 
   function addParticles() {
